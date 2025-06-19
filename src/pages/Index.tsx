@@ -1,28 +1,67 @@
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import WelcomePage from '../components/WelcomePage';
 import StoryReader from '../components/StoryReader';
 import EditionComplete from '../components/EditionComplete';
 import Settings from '../components/Settings';
-import { todaysEdition, pastEditions } from '../data/mockNews';
-import { NewsStory, UserSettings } from '../types/news';
+import { UserSettings } from '../types/news';
 import { useSwipeNavigation } from '../hooks/useSwipeNavigation';
+import { Button } from '@/components/ui/button';
 
 type AppState = 'welcome' | 'reading' | 'complete' | 'settings' | 'archive';
 
+interface Article {
+  id: string;
+  title: string;
+  subtitle?: string;
+  content: string;
+  source: string;
+  published_at: string;
+  reading_time: number;
+  category: string;
+}
+
 const Index = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [appState, setAppState] = useState<AppState>('welcome');
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<UserSettings>({
     fontSize: 'medium',
     sepia: false
   });
 
-  const currentStory = todaysEdition.stories[currentStoryIndex];
+  const currentStory = articles[currentStoryIndex];
+
+  useEffect(() => {
+    const fetchArticles = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('articles')
+          .select('*')
+          .eq('is_live', true)
+          .order('published_at', { ascending: false });
+
+        if (error) throw error;
+        setArticles(data || []);
+      } catch (error) {
+        console.error('Error fetching articles:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchArticles();
+  }, []);
 
   useSwipeNavigation({
     onSwipeLeft: () => {
-      if (appState === 'reading' && currentStoryIndex < todaysEdition.stories.length - 1) {
+      if (appState === 'reading' && currentStoryIndex < articles.length - 1) {
         handleNextStory();
       }
     },
@@ -38,7 +77,7 @@ const Index = () => {
   };
 
   const handleNextStory = () => {
-    if (currentStoryIndex < todaysEdition.stories.length - 1) {
+    if (currentStoryIndex < articles.length - 1) {
       setCurrentStoryIndex(currentStoryIndex + 1);
     } else {
       setAppState('complete');
@@ -47,7 +86,7 @@ const Index = () => {
 
   const handlePreviousStory = () => {
     if (currentStoryIndex > 0) {
-      setCurrentStoryIndex(currentStoryIndex - 1);
+      setCurrentStoryIndex(currentStoryIndex -## 1);
     }
   };
 
@@ -85,6 +124,33 @@ const Index = () => {
     }
   }, []);
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-read-bg flex items-center justify-center">
+        <div className="text-read-text">Loading today's edition...</div>
+      </div>
+    );
+  }
+
+  if (articles.length === 0) {
+    return (
+      <div className="min-h-screen bg-read-bg flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-serif text-read-text mb-4">No articles available</h1>
+          <p className="text-read-text-dim mb-4">Check back later for today's edition.</p>
+          {user && (
+            <Button 
+              onClick={() => navigate('/admin')}
+              className="bg-read-accent hover:bg-read-accent/90 text-black"
+            >
+              Go to Admin Dashboard
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (appState === 'welcome') {
     return <WelcomePage onEnterApp={handleEnterApp} />;
   }
@@ -92,7 +158,7 @@ const Index = () => {
   if (appState === 'complete') {
     return (
       <EditionComplete
-        totalStories={todaysEdition.stories.length}
+        totalStories={articles.length}
         onBackToEdition={handleBackToEdition}
         onViewArchive={handleViewArchive}
       />
@@ -123,11 +189,15 @@ const Index = () => {
             Past Editions
           </h1>
           <div className="space-y-4">
-            {pastEditions.map((edition) => (
-              <div key={edition.id} className="bg-read-surface border border-read-border rounded-lg p-6">
-                <h2 className="text-read-text font-serif text-lg mb-2">{edition.title}</h2>
+            {articles.map((article) => (
+              <div 
+                key={article.id} 
+                className="bg-read-surface border border-read-border rounded-lg p-6 cursor-pointer hover:bg-read-surface/80"
+                onClick={() => navigate(`/article/${article.id}`)}
+              >
+                <h2 className="text-read-text font-serif text-lg mb-2">{article.title}</h2>
                 <p className="text-read-text-dim font-sans text-sm">
-                  {edition.stories.length} stories • {new Date(edition.date).toLocaleDateString()}
+                  {article.source} • {new Date(article.published_at).toLocaleDateString()}
                 </p>
               </div>
             ))}
@@ -140,22 +210,48 @@ const Index = () => {
   return (
     <div className="relative">
       <StoryReader
-        story={currentStory}
+        story={{
+          id: currentStory.id,
+          title: currentStory.title,
+          subtitle: currentStory.subtitle,
+          content: currentStory.content,
+          source: currentStory.source,
+          publishedAt: currentStory.published_at,
+          readingTime: currentStory.reading_time,
+          category: currentStory.category
+        }}
         currentStoryIndex={currentStoryIndex}
-        totalStories={todaysEdition.stories.length}
+        totalStories={articles.length}
         settings={settings}
         onNext={handleNextStory}
         onPrevious={handlePreviousStory}
         onBack={() => setAppState('welcome')}
       />
 
-      {/* Settings Button */}
-      <button
-        onClick={handleSettings}
-        className="fixed top-4 right-4 z-20 text-read-text-dim hover:text-read-text font-sans text-sm"
-      >
-        Settings
-      </button>
+      {/* Header buttons */}
+      <div className="fixed top-4 right-4 z-20 flex gap-2">
+        <button
+          onClick={handleSettings}
+          className="text-read-text-dim hover:text-read-text font-sans text-sm"
+        >
+          Settings
+        </button>
+        {user ? (
+          <button
+            onClick={() => navigate('/admin')}
+            className="text-read-text-dim hover:text-read-text font-sans text-sm"
+          >
+            Admin
+          </button>
+        ) : (
+          <button
+            onClick={() => navigate('/auth')}
+            className="text-read-text-dim hover:text-read-text font-sans text-sm"
+          >
+            Sign In
+          </button>
+        )}
+      </div>
     </div>
   );
 };
