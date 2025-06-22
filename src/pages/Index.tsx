@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -86,7 +85,7 @@ const Index = () => {
 
   const handlePreviousStory = () => {
     if (currentStoryIndex > 0) {
-      setCurrentStoryIndex(currentStoryIndex -## 1);
+      setCurrentStoryIndex(currentStoryIndex - 1);
     }
   };
 
