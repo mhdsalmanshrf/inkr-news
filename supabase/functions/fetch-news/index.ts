@@ -45,18 +45,24 @@ serve(async (req) => {
     // Simple RSS parser
     const items = parseRSSFeed(rssText, source)
     
-    // Insert articles into database
+    // Insert articles into database with AI enhancements
     const insertPromises = items.map(async (item) => {
+      // Generate AI summary and tags
+      const aiEnhancements = await generateAIEnhancements(item.title, item.description || '')
+      
       const { data, error } = await supabaseClient
         .from('articles')
         .insert({
           title: item.title,
           content: item.description || item.title,
           summary: item.description,
+          ai_summary: aiEnhancements.summary,
+          ai_tags: aiEnhancements.tags,
           source: item.source,
           source_url: item.link,
-          category: 'general',
+          category: aiEnhancements.category || 'general',
           is_live: false,
+          is_trending: aiEnhancements.isTrending,
           reading_time: Math.max(1, Math.floor((item.description?.length || 0) / 250))
         })
         .select()
@@ -93,6 +99,59 @@ serve(async (req) => {
     )
   }
 })
+
+async function generateAIEnhancements(title: string, content: string) {
+  // Simple AI categorization and tagging based on keywords
+  const text = (title + ' ' + content).toLowerCase()
+  
+  // Category detection
+  let category = 'general'
+  if (text.includes('tech') || text.includes('ai') || text.includes('artificial intelligence') || text.includes('software')) {
+    category = 'technology'
+  } else if (text.includes('politic') || text.includes('government') || text.includes('election')) {
+    category = 'politics'
+  } else if (text.includes('business') || text.includes('economy') || text.includes('market') || text.includes('financial')) {
+    category = 'business'
+  } else if (text.includes('health') || text.includes('medical') || text.includes('doctor')) {
+    category = 'health'
+  } else if (text.includes('climate') || text.includes('environment') || text.includes('energy')) {
+    category = 'environment'
+  } else if (text.includes('sport') || text.includes('football') || text.includes('soccer')) {
+    category = 'sports'
+  }
+
+  // Tag extraction
+  const tags: string[] = []
+  const tagKeywords = [
+    'AI', 'Technology', 'Politics', 'Business', 'Health', 'Climate',
+    'Energy', 'UAE', 'India', 'China', 'USA', 'Europe', 'Finance',
+    'Cryptocurrency', 'Startup', 'Innovation', 'Science'
+  ]
+  
+  tagKeywords.forEach(keyword => {
+    if (text.includes(keyword.toLowerCase())) {
+      tags.push(keyword)
+    }
+  })
+
+  // Trending detection (simple heuristic)
+  const trendingKeywords = ['breaking', 'urgent', 'major', 'historic', 'unprecedented', 'crisis']
+  const isTrending = trendingKeywords.some(keyword => text.includes(keyword))
+
+  // Generate simple summary (first sentence or truncated content)
+  let summary = content
+  if (content.length > 200) {
+    const sentences = content.split('. ')
+    summary = sentences[0] + (sentences.length > 1 ? '...' : '')
+  }
+
+  return {
+    category,
+    tags: tags.slice(0, 5), // Limit to 5 tags
+    summary,
+    isTrending
+  }
+}
 
 function parseRSSFeed(rssText: string, source: string) {
   const items: any[] = []

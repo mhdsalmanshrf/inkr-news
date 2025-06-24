@@ -11,12 +11,15 @@ export type Database = {
     Tables: {
       articles: {
         Row: {
+          ai_summary: string | null
+          ai_tags: string[] | null
           category: string | null
           content: string
           created_at: string
           id: string
           is_featured: boolean | null
           is_live: boolean | null
+          is_trending: boolean | null
           published_at: string | null
           reading_time: number | null
           source: string
@@ -25,14 +28,18 @@ export type Database = {
           summary: string | null
           title: string
           updated_at: string
+          view_count: number | null
         }
         Insert: {
+          ai_summary?: string | null
+          ai_tags?: string[] | null
           category?: string | null
           content: string
           created_at?: string
           id?: string
           is_featured?: boolean | null
           is_live?: boolean | null
+          is_trending?: boolean | null
           published_at?: string | null
           reading_time?: number | null
           source: string
@@ -41,14 +48,18 @@ export type Database = {
           summary?: string | null
           title: string
           updated_at?: string
+          view_count?: number | null
         }
         Update: {
+          ai_summary?: string | null
+          ai_tags?: string[] | null
           category?: string | null
           content?: string
           created_at?: string
           id?: string
           is_featured?: boolean | null
           is_live?: boolean | null
+          is_trending?: boolean | null
           published_at?: string | null
           reading_time?: number | null
           source?: string
@@ -57,8 +68,38 @@ export type Database = {
           summary?: string | null
           title?: string
           updated_at?: string
+          view_count?: number | null
         }
         Relationships: []
+      }
+      bookmarks: {
+        Row: {
+          article_id: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          article_id: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          article_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookmarks_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -84,12 +125,56 @@ export type Database = {
         }
         Relationships: []
       }
+      user_interests: {
+        Row: {
+          created_at: string
+          id: string
+          interest: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          interest: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          interest?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_personalized_articles: {
+        Args: { user_id: string; limit_count?: number }
+        Returns: {
+          id: string
+          title: string
+          subtitle: string
+          content: string
+          summary: string
+          ai_summary: string
+          source: string
+          category: string
+          ai_tags: string[]
+          is_live: boolean
+          is_trending: boolean
+          reading_time: number
+          view_count: number
+          published_at: string
+          is_bookmarked: boolean
+        }[]
+      }
+      increment_view_count: {
+        Args: { article_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
