@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Bookmark, BookmarkCheck, Clock, TrendingUp, Filter } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Clock, TrendingUp, Filter, RefreshCw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface PersonalizedArticle {
@@ -27,29 +27,46 @@ interface PersonalizedArticle {
 
 type FilterType = 'all' | 'trending' | 'latest' | 'bookmarked';
 
+const ARTICLES_PER_PAGE = 10;
+
 const HomePage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [articles, setArticles] = useState<PersonalizedArticle[]>([]);
   const [userInterests, setUserInterests] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
   const [userName, setUserName] = useState('');
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     fetchUserData();
-    fetchArticles();
-    
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(fetchArticles, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    fetchArticles(true);
   }, [user, filter]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (
+        window.innerHeight + document.documentElement.scrollTop + 1000 >= 
+        document.documentElement.scrollHeight &&
+        !loadingMore &&
+        hasMore
+      ) {
+        loadMoreArticles();
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [loadingMore, hasMore, page, filter]);
 
   const fetchUserData = async () => {
     if (!user) return;
 
     try {
-      // Get user interests
       const { data: interests } = await supabase
         .from('user_interests')
         .select('interest')
@@ -62,15 +79,19 @@ const HomePage = () => {
     }
   };
 
-  const fetchArticles = async () => {
+  const fetchArticles = async (reset = false) => {
     try {
+      const currentPage = reset ? 0 : page;
+      const offset = currentPage * ARTICLES_PER_PAGE;
+
       if (filter === 'bookmarked') {
         if (!user) {
           setArticles([]);
+          setHasMore(false);
           return;
         }
 
-        const { data } = await supabase
+        const { data, count } = await supabase
           .from('bookmarks')
           .select(`
             article_id,
@@ -78,20 +99,27 @@ const HomePage = () => {
               id, title, subtitle, summary, ai_summary, source, category, 
               ai_tags, is_trending, published_at, reading_time, view_count
             )
-          `)
-          .eq('user_id', user.id);
+          `, { count: 'exact' })
+          .eq('user_id', user.id)
+          .range(offset, offset + ARTICLES_PER_PAGE - 1);
 
         const bookmarkedArticles = data?.map(b => ({
           ...b.articles,
           is_bookmarked: true
         })) || [];
 
-        setArticles(bookmarkedArticles as PersonalizedArticle[]);
+        if (reset) {
+          setArticles(bookmarkedArticles as PersonalizedArticle[]);
+        } else {
+          setArticles(prev => [...prev, ...bookmarkedArticles as PersonalizedArticle[]]);
+        }
+
+        setHasMore((count || 0) > offset + ARTICLES_PER_PAGE);
       } else if (user) {
-        // Get personalized articles
-        const { data } = await supabase.rpc('get_personalized_articles', {
+        const { data, count } = await supabase.rpc('get_personalized_articles', {
           user_id: user.id,
-          limit_count: 50
+          limit_count: ARTICLES_PER_PAGE,
+          offset_count: offset
         });
 
         let filteredData = data || [];
@@ -104,28 +132,68 @@ const HomePage = () => {
           );
         }
 
-        setArticles(filteredData);
+        if (reset) {
+          setArticles(filteredData);
+        } else {
+          setArticles(prev => [...prev, ...filteredData]);
+        }
+
+        setHasMore(filteredData.length === ARTICLES_PER_PAGE);
       } else {
-        // Guest user - show all articles
-        const { data } = await supabase
+        const { data, count } = await supabase
           .from('articles')
-          .select('*')
+          .select('*', { count: 'exact' })
           .eq('is_live', true)
           .order('published_at', { ascending: false })
-          .limit(20);
+          .range(offset, offset + ARTICLES_PER_PAGE - 1);
 
         const articlesWithBookmark = data?.map(article => ({
           ...article,
           is_bookmarked: false
         })) || [];
 
-        setArticles(articlesWithBookmark as PersonalizedArticle[]);
+        if (reset) {
+          setArticles(articlesWithBookmark as PersonalizedArticle[]);
+        } else {
+          setArticles(prev => [...prev, ...articlesWithBookmark as PersonalizedArticle[]]);
+        }
+
+        setHasMore((count || 0) > offset + ARTICLES_PER_PAGE);
+      }
+
+      if (reset) {
+        setPage(1);
+      } else {
+        setPage(prev => prev + 1);
       }
     } catch (error) {
       console.error('Error fetching articles:', error);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
+      setRefreshing(false);
     }
+  };
+
+  const loadMoreArticles = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      setLoadingMore(true);
+      fetchArticles(false);
+    }
+  }, [loadingMore, hasMore, page, filter]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setPage(0);
+    setHasMore(true);
+    await fetchArticles(true);
+  };
+
+  const handleFilterChange = (newFilter: FilterType) => {
+    setFilter(newFilter);
+    setPage(0);
+    setHasMore(true);
+    setLoading(true);
   };
 
   const handleBookmark = async (articleId: string, isCurrentlyBookmarked: boolean) => {
@@ -150,7 +218,6 @@ const HomePage = () => {
           });
       }
 
-      // Update local state
       setArticles(prev => prev.map(article => 
         article.id === articleId 
           ? { ...article, is_bookmarked: !isCurrentlyBookmarked }
@@ -194,7 +261,7 @@ const HomePage = () => {
         <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-serif text-read-text">ReadLight News</h1>
+              <h1 className="text-2xl font-serif text-read-text">Inkr News</h1>
               {user && userInterests.length > 0 && (
                 <p className="text-read-text-dim text-sm">
                   Hello {userName}, here's news on {userInterests.slice(0, 3).join(', ')}
@@ -204,6 +271,16 @@ const HomePage = () => {
             </div>
             
             <div className="flex items-center gap-3">
+              <Button
+                onClick={handleRefresh}
+                variant="ghost"
+                size="sm"
+                className="text-read-text-dim hover:text-read-text"
+                disabled={refreshing}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
               <Button
                 onClick={() => navigate('/settings')}
                 variant="ghost"
@@ -232,14 +309,14 @@ const HomePage = () => {
             </div>
           </div>
 
-          {/* Filters */}
+          {/* Navigation Filters */}
           <div className="flex gap-2 flex-wrap">
             {(['all', 'trending', 'latest', 'bookmarked'] as FilterType[]).map((filterType) => (
               <Button
                 key={filterType}
                 variant={filter === filterType ? "default" : "outline"}
                 size="sm"
-                onClick={() => setFilter(filterType)}
+                onClick={() => handleFilterChange(filterType)}
                 className={
                   filter === filterType
                     ? "bg-read-accent text-black hover:bg-read-accent/90"
@@ -298,7 +375,7 @@ const HomePage = () => {
             </p>
             {filter === 'bookmarked' && (
               <Button
-                onClick={() => setFilter('all')}
+                onClick={() => handleFilterChange('all')}
                 className="bg-read-accent hover:bg-read-accent/90 text-black"
               >
                 Browse All Articles
@@ -306,83 +383,99 @@ const HomePage = () => {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {articles.map((article) => (
-              <Card
-                key={article.id}
-                className="bg-read-surface border-read-border hover:border-read-accent/50 transition-all cursor-pointer group"
-                onClick={() => navigate(`/article/${article.id}`)}
-              >
-                <CardHeader className="space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="outline" className="border-read-border text-read-text-dim text-xs">
-                        {article.source}
-                      </Badge>
-                      {article.is_trending && (
-                        <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
-                          <TrendingUp className="h-3 w-3 mr-1" />
-                          Trending
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {articles.map((article) => (
+                <Card
+                  key={article.id}
+                  className="bg-read-surface border-read-border hover:border-read-accent/50 transition-all cursor-pointer group"
+                  onClick={() => navigate(`/article/${article.id}`)}
+                >
+                  <CardHeader className="space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className="border-read-border text-read-text-dim text-xs">
+                          {article.source}
                         </Badge>
-                      )}
+                        {article.is_trending && (
+                          <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
+                            <TrendingUp className="h-3 w-3 mr-1" />
+                            Trending
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleBookmark(article.id, article.is_bookmarked);
+                        }}
+                        className="h-8 w-8 p-0 text-read-text-dim hover:text-read-accent"
+                      >
+                        {article.is_bookmarked ? (
+                          <BookmarkCheck className="h-4 w-4" />
+                        ) : (
+                          <Bookmark className="h-4 w-4" />
+                        )}
+                      </Button>
                     </div>
-                    
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleBookmark(article.id, article.is_bookmarked);
-                      }}
-                      className="h-8 w-8 p-0 text-read-text-dim hover:text-read-accent"
-                    >
-                      {article.is_bookmarked ? (
-                        <BookmarkCheck className="h-4 w-4" />
-                      ) : (
-                        <Bookmark className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
 
-                  <h3 className="font-serif text-lg leading-tight text-read-text group-hover:text-read-accent transition-colors">
-                    {article.title}
-                  </h3>
-                </CardHeader>
+                    <h3 className="font-serif text-lg leading-tight text-read-text group-hover:text-read-accent transition-colors">
+                      {article.title}
+                    </h3>
+                  </CardHeader>
 
-                <CardContent className="space-y-4">
-                  {(article.ai_summary || article.summary) && (
-                    <p className="text-read-text-dim text-sm line-clamp-3">
-                      {article.ai_summary || article.summary}
-                    </p>
-                  )}
+                  <CardContent className="space-y-4">
+                    {(article.ai_summary || article.summary) && (
+                      <p className="text-read-text-dim text-sm line-clamp-3">
+                        {article.ai_summary || article.summary}
+                      </p>
+                    )}
 
-                  <div className="flex items-center justify-between text-xs text-read-text-dim">
-                    <div className="flex items-center gap-4">
-                      <span>{formatTimeAgo(article.published_at)}</span>
-                      <span>{article.reading_time} min read</span>
-                      {article.view_count > 0 && (
-                        <span>{article.view_count} views</span>
-                      )}
+                    <div className="flex items-center justify-between text-xs text-read-text-dim">
+                      <div className="flex items-center gap-4">
+                        <span>{formatTimeAgo(article.published_at)}</span>
+                        <span>{article.reading_time} min read</span>
+                        {article.view_count > 0 && (
+                          <span>{article.view_count} views</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  {article.ai_tags && article.ai_tags.length > 0 && (
-                    <div className="flex gap-1 flex-wrap">
-                      {article.ai_tags.slice(0, 3).map((tag, index) => (
-                        <Badge
-                          key={index}
-                          variant="outline"
-                          className="border-read-border text-read-text-dim text-xs"
-                        >
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                    {article.ai_tags && article.ai_tags.length > 0 && (
+                      <div className="flex gap-1 flex-wrap">
+                        {article.ai_tags.slice(0, 3).map((tag, index) => (
+                          <Badge
+                            key={index}
+                            variant="outline"
+                            className="border-read-border text-read-text-dim text-xs"
+                          >
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Loading More Indicator */}
+            {loadingMore && (
+              <div className="text-center py-8">
+                <div className="text-read-text-dim">Loading more articles...</div>
+              </div>
+            )}
+
+            {/* End of Articles Indicator */}
+            {!hasMore && articles.length > 0 && (
+              <div className="text-center py-8">
+                <p className="text-read-text-dim">You've reached the end!</p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -5,9 +5,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, Bookmark, BookmarkCheck, Eye, Share2, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Bookmark, BookmarkCheck, Eye, TrendingUp } from 'lucide-react';
 import ReadingProgress from '@/components/ReadingProgress';
 import AIInsights from '@/components/ArticleAI/AIInsights';
+import ShareButtons from '@/components/ShareButtons';
 import { toast } from '@/hooks/use-toast';
 
 interface Article {
@@ -149,18 +150,6 @@ const SingleArticle = () => {
     }
   };
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: article?.title,
-        url: window.location.href
-      });
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast({ title: "Link copied to clipboard" });
-    }
-  };
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       weekday: 'long',
@@ -214,19 +203,10 @@ const SingleArticle = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleShare}
-                className="text-read-text-dim hover:text-read-text"
-              >
-                <Share2 className="h-4 w-4" />
-              </Button>
-              
-              <Button
-                variant="ghost"
-                size="sm"
                 onClick={handleBookmark}
                 className="text-read-text-dim hover:text-read-accent"
               >
-                {article.is_bookmarked ? (
+                {article?.is_bookmarked ? (
                   <BookmarkCheck className="h-4 w-4" />
                 ) : (
                   <Bookmark className="h-4 w-4" />
@@ -243,14 +223,14 @@ const SingleArticle = () => {
         <header className="mb-8">
           <div className="flex items-center gap-4 mb-6 flex-wrap">
             <Badge variant="outline" className="border-read-border text-read-text-dim">
-              {article.source}
+              {article?.source}
             </Badge>
             
             <Badge variant="outline" className="border-read-border text-read-text-dim">
-              {article.category}
+              {article?.category}
             </Badge>
             
-            {article.is_trending && (
+            {article?.is_trending && (
               <Badge className="bg-red-500/20 text-red-400 border-red-500/30">
                 <TrendingUp className="h-3 w-3 mr-1" />
                 Trending
@@ -258,34 +238,38 @@ const SingleArticle = () => {
             )}
             
             <div className="flex items-center gap-4 text-read-text-dim text-sm">
-              <span>{article.reading_time} min read</span>
+              <span>{article?.reading_time} min read</span>
               <span className="flex items-center gap-1">
                 <Eye className="h-3 w-3" />
-                {article.view_count || 0} views
+                {article?.view_count || 0} views
               </span>
             </div>
           </div>
           
-          <h1 className="font-serif font-light leading-tight mb-6 text-4xl text-read-text">
-            {article.title}
+          <h1 className="font-serif font-light leading-tight mb-6 text-3xl md:text-4xl text-read-text">
+            {article?.title}
           </h1>
           
-          {article.subtitle && (
-            <p className="font-serif italic leading-relaxed mb-6 text-xl text-read-text-dim">
+          {article?.subtitle && (
+            <p className="font-serif italic leading-relaxed mb-6 text-lg md:text-xl text-read-text-dim">
               {article.subtitle}
             </p>
           )}
 
-          {article.ai_summary && (
-            <div className="bg-read-accent/10 border border-read-accent/20 rounded-lg p-6 mb-6">
+          {article?.ai_summary && (
+            <div className="bg-read-accent/10 border border-read-accent/20 rounded-lg p-4 md:p-6 mb-6">
               <h3 className="text-read-accent font-medium mb-2">AI Summary</h3>
-              <p className="text-read-text leading-relaxed">{article.ai_summary}</p>
+              <p className="text-read-text leading-relaxed text-sm md:text-base">{article.ai_summary}</p>
             </div>
           )}
           
-          <div className="text-read-text-dim font-sans text-sm flex items-center justify-between">
-            <span>{formatDate(article.published_at)}</span>
-            {article.source_url && (
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 text-read-text-dim font-sans text-sm">
+            <span>{article ? formatDate(article.published_at) : ''}</span>
+            
+            {/* Share Buttons */}
+            {article && <ShareButtons title={article.title} />}
+            
+            {article?.source_url && (
               <a 
                 href={article.source_url} 
                 target="_blank" 
@@ -298,8 +282,8 @@ const SingleArticle = () => {
           </div>
         </header>
 
-        <div className="prose prose-lg max-w-none font-serif leading-relaxed text-lg text-read-text">
-          {article.content.split('\n\n').map((paragraph, index) => (
+        <div className="prose prose-lg max-w-none font-serif leading-relaxed text-base md:text-lg text-read-text">
+          {article?.content.split('\n\n').map((paragraph, index) => (
             <p key={index} className="mb-6 text-justify">
               {paragraph.trim()}
             </p>
@@ -307,17 +291,19 @@ const SingleArticle = () => {
         </div>
 
         {/* AI Insights Section */}
-        <div className="mt-12 pt-8 border-t border-read-border">
-          <AIInsights
-            articleId={article.id}
-            title={article.title}
-            content={article.content}
-            aiSummary={article.ai_summary}
-          />
-        </div>
+        {article && (
+          <div className="mt-12 pt-8 border-t border-read-border">
+            <AIInsights
+              articleId={article.id}
+              title={article.title}
+              content={article.content}
+              aiSummary={article.ai_summary}
+            />
+          </div>
+        )}
 
         {/* AI Tags */}
-        {article.ai_tags && article.ai_tags.length > 0 && (
+        {article?.ai_tags && article.ai_tags.length > 0 && (
           <div className="mt-8 pt-6 border-t border-read-border">
             <h4 className="text-read-text font-medium mb-3">Related Topics</h4>
             <div className="flex gap-2 flex-wrap">
@@ -337,7 +323,7 @@ const SingleArticle = () => {
         {/* Related Articles */}
         {relatedArticles.length > 0 && (
           <div className="mt-12 pt-8 border-t border-read-border">
-            <h3 className="text-2xl font-serif text-read-text mb-6">More like this</h3>
+            <h3 className="text-xl md:text-2xl font-serif text-read-text mb-6">More like this</h3>
             <div className="grid gap-4">
               {relatedArticles.map((related) => (
                 <Card

@@ -1,22 +1,22 @@
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import HomePage from './HomePage';
 
 const Index = () => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
-  useEffect(() => {
-    // Redirect to the new HomePage
-    navigate('/home');
-  }, [navigate]);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-read-bg flex items-center justify-center">
+        <div className="text-read-text">Loading...</div>
+      </div>
+    );
+  }
 
-  return (
-    <div className="min-h-screen bg-read-bg flex items-center justify-center">
-      <div className="text-read-text">Redirecting...</div>
-    </div>
-  );
+  // Show HomePage directly instead of redirecting
+  return <HomePage />;
 };
 
 export default Index;
