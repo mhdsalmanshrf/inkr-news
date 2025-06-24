@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, Bookmark, BookmarkCheck, Eye, Share2, TrendingUp } from 'lucide-react';
 import ReadingProgress from '@/components/ReadingProgress';
+import AIInsights from '@/components/ArticleAI/AIInsights';
 import { toast } from '@/hooks/use-toast';
 
 interface Article {
@@ -303,6 +304,16 @@ const SingleArticle = () => {
               {paragraph.trim()}
             </p>
           ))}
+        </div>
+
+        {/* AI Insights Section */}
+        <div className="mt-12 pt-8 border-t border-read-border">
+          <AIInsights
+            articleId={article.id}
+            title={article.title}
+            content={article.content}
+            aiSummary={article.ai_summary}
+          />
         </div>
 
         {/* AI Tags */}
