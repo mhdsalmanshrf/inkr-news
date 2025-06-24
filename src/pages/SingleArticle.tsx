@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -83,10 +82,10 @@ const SingleArticle = () => {
 
         setArticle({ ...articleData, is_bookmarked: isBookmarked });
 
-        // Fetch related articles
+        // Fetch related articles with all required fields
         const { data: related } = await supabase
           .from('articles')
-          .select('id, title, source, category, ai_tags, reading_time, published_at')
+          .select('id, title, subtitle, content, summary, ai_summary, source, source_url, category, ai_tags, reading_time, published_at, is_trending, view_count')
           .eq('is_live', true)
           .neq('id', articleId)
           .or(`category.eq.${articleData.category}`)
