@@ -3,11 +3,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { usePullToRefresh } from '@/hooks/usePullToRefresh';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Bookmark, BookmarkCheck, Clock, TrendingUp, Filter, RefreshCw } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import PullToRefreshIndicator from '@/components/PullToRefreshIndicator';
 
 interface PersonalizedArticle {
   id: string;
@@ -41,6 +43,18 @@ const HomePage = () => {
   const [userName, setUserName] = useState('');
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setPage(0);
+    setHasMore(true);
+    await fetchArticles(true);
+  }, [filter, user]);
+
+  const { pullDistance, isRefreshing } = usePullToRefresh({
+    onRefresh: handleRefresh,
+    threshold: 80
+  });
 
   useEffect(() => {
     fetchUserData();
@@ -82,7 +96,6 @@ const HomePage = () => {
   const fetchArticles = async (reset = false) => {
     try {
       const currentPage = reset ? 0 : page;
-      const offset = currentPage * ARTICLES_PER_PAGE;
 
       if (filter === 'bookmarked') {
         if (!user) {
@@ -101,7 +114,7 @@ const HomePage = () => {
             )
           `, { count: 'exact' })
           .eq('user_id', user.id)
-          .range(offset, offset + ARTICLES_PER_PAGE - 1);
+          .range(currentPage * ARTICLES_PER_PAGE, (currentPage + 1) * ARTICLES_PER_PAGE - 1);
 
         const bookmarkedArticles = data?.map(b => ({
           ...b.articles,
@@ -114,12 +127,12 @@ const HomePage = () => {
           setArticles(prev => [...prev, ...bookmarkedArticles as PersonalizedArticle[]]);
         }
 
-        setHasMore((count || 0) > offset + ARTICLES_PER_PAGE);
+        setHasMore((count || 0) > (currentPage + 1) * ARTICLES_PER_PAGE);
       } else if (user) {
-        const { data, count } = await supabase.rpc('get_personalized_articles', {
+        // For authenticated users, get all articles and handle pagination client-side for now
+        const { data } = await supabase.rpc('get_personalized_articles', {
           user_id: user.id,
-          limit_count: ARTICLES_PER_PAGE,
-          offset_count: offset
+          limit_count: (currentPage + 1) * ARTICLES_PER_PAGE
         });
 
         let filteredData = data || [];
@@ -133,19 +146,22 @@ const HomePage = () => {
         }
 
         if (reset) {
-          setArticles(filteredData);
+          setArticles(filteredData.slice(0, ARTICLES_PER_PAGE));
         } else {
-          setArticles(prev => [...prev, ...filteredData]);
+          const startIndex = currentPage * ARTICLES_PER_PAGE;
+          const endIndex = (currentPage + 1) * ARTICLES_PER_PAGE;
+          const newArticles = filteredData.slice(startIndex, endIndex);
+          setArticles(prev => [...prev, ...newArticles]);
         }
 
-        setHasMore(filteredData.length === ARTICLES_PER_PAGE);
+        setHasMore(filteredData.length > (currentPage + 1) * ARTICLES_PER_PAGE);
       } else {
         const { data, count } = await supabase
           .from('articles')
           .select('*', { count: 'exact' })
           .eq('is_live', true)
           .order('published_at', { ascending: false })
-          .range(offset, offset + ARTICLES_PER_PAGE - 1);
+          .range(currentPage * ARTICLES_PER_PAGE, (currentPage + 1) * ARTICLES_PER_PAGE - 1);
 
         const articlesWithBookmark = data?.map(article => ({
           ...article,
@@ -158,7 +174,7 @@ const HomePage = () => {
           setArticles(prev => [...prev, ...articlesWithBookmark as PersonalizedArticle[]]);
         }
 
-        setHasMore((count || 0) > offset + ARTICLES_PER_PAGE);
+        setHasMore((count || 0) > (currentPage + 1) * ARTICLES_PER_PAGE);
       }
 
       if (reset) {
@@ -181,13 +197,6 @@ const HomePage = () => {
       fetchArticles(false);
     }
   }, [loadingMore, hasMore, page, filter]);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    setPage(0);
-    setHasMore(true);
-    await fetchArticles(true);
-  };
 
   const handleFilterChange = (newFilter: FilterType) => {
     setFilter(newFilter);
@@ -256,6 +265,11 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen bg-read-bg">
+      <PullToRefreshIndicator 
+        pullDistance={pullDistance} 
+        isRefreshing={isRefreshing || refreshing}
+      />
+      
       {/* Header */}
       <div className="border-b border-read-border bg-read-surface/95 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-6 py-4">
